@@ -10,6 +10,7 @@
 - **Темная тема**: автоматическая поддержка `prefers-color-scheme`
 - **Доступность**: семантическая разметка, ARIA-метки, состояния фокуса
 - **SEO-нейтральный**: нет аналитики, метатегов Open Graph или robots.txt
+- **Автоматическая установка**: готовый bash-скрипт для полного развёртывания
 
 ## Структура файлов
 
@@ -22,10 +23,87 @@
 │   ├── app.js          # Минимальный JS для отображения домена
 │   └── logo.svg        # Логотип (встроенный SVG)
 ├── nginx.conf          # Пример конфигурации Nginx
+├── install.sh          # Скрипт автоматической установки (рекомендуется)
 └── README.md           # Этот файл
 ```
 
-## Развёртывание
+## Быстрый старт (рекомендуется)
+
+### Автоматическая установка
+
+Используйте скрипт `install.sh` для полностью автоматического развёртывания:
+
+**Интерактивный режим:**
+```bash
+# Скачать и запустить скрипт
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/alche-my/temp-vpn-site/main/install.sh)"
+
+# Или скачать сначала
+curl -fsSL https://raw.githubusercontent.com/alche-my/temp-vpn-site/main/install.sh -o install.sh
+chmod +x install.sh
+sudo ./install.sh
+```
+
+**Неинтерактивный режим:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/alche-my/temp-vpn-site/main/install.sh | sudo bash -s -- \
+  --domain video.mashina.online \
+  --email admin@video.mashina.online
+```
+
+**Тестовый прогон (без изменений системы):**
+```bash
+./install.sh --domain example.com --dry-run
+```
+
+### Что делает install.sh
+
+Скрипт автоматически выполняет все необходимые шаги:
+
+1. ✅ **Проверка DNS**: убеждается, что A-запись существует
+2. ✅ **Установка пакетов**: устанавливает Nginx и Certbot
+3. ✅ **Подготовка сайта**: удаляет дефолтную конфигурацию, создаёт директорию
+4. ✅ **Получение TLS-сертификата**: использует Certbot с флагом `--nginx`
+5. ✅ **Настройка SNI**: создаёт конфигурацию на `127.0.0.1:8443` с Proxy Protocol
+6. ✅ **Развёртывание сайта**: скачивает и устанавливает файлы из GitHub
+7. ✅ **Настройка автопродления**: включает таймер Certbot для обновления сертификатов
+8. ✅ **Финальная проверка**: выводит чеклист и инструкции для 3x-ui/Reality
+
+**Особенности скрипта:**
+- Полное логирование в `/var/log/vpn-placeholder-install-<domain>-<timestamp>.log`
+- Автоматический бэкап конфигураций Nginx
+- Откат изменений при ошибках
+- Проверка после каждого шага с понятными сообщениями об ошибках
+- Режим `--dry-run` для тестирования без изменений
+- Напоминание о настройке Reality/3x-ui inbound
+
+### Конфигурация Reality (3x-ui)
+
+После завершения установки настройте Reality inbound в панели 3x-ui:
+
+| Поле              | Значение          |
+|-------------------|-------------------|
+| Port              | 443               |
+| Security          | reality           |
+| Dest (Target)     | 127.0.0.1:8443    |
+| SNI / Server name | ваш_домен         |
+| uTLS              | chrome            |
+| Xver              | 1                 |
+
+**Команды для проверки:**
+```bash
+# Проверка TLS
+openssl s_client -connect ваш_домен:443 -servername ваш_домен -alpn h2 -brief </dev/null
+
+# Проверка локального сайта
+curl -vk https://127.0.0.1:8443 --resolve ваш_домен:8443:127.0.0.1 | head -n 30
+```
+
+---
+
+## Ручное развёртывание (альтернативный метод)
+
+Если вы предпочитаете ручную установку вместо автоматического скрипта:
 
 ### Шаг 1: Копирование файлов
 
@@ -33,47 +111,67 @@
 
 ```bash
 # Создайте директорию
-sudo mkdir -p /var/www/placeholder
+sudo mkdir -p /var/www/html/site
 
 # Скопируйте файлы (замените путь на ваш)
-sudo cp -r * /var/www/placeholder/
+sudo cp -r * /var/www/html/site/
 
 # Установите права
-sudo chown -R www-data:www-data /var/www/placeholder
-sudo chmod -R 755 /var/www/placeholder
+sudo chown -R www-data:www-data /var/www/html/site
+sudo chmod -R 755 /var/www/html/site
 ```
 
 ### Шаг 2: Настройка Nginx
 
-Отредактируйте конфигурацию Nginx:
+**Примечание:** Файл `nginx.conf` в репозитории — это справочный пример для обычного развёртывания. Для Reality/VLESS используйте конфигурацию SNI на порту 8443 с Proxy Protocol (создаётся автоматически скриптом `install.sh`).
 
-```bash
-# Создайте конфигурационный файл
-sudo nano /etc/nginx/sites-available/placeholder
+Для ручной настройки SNI-сайта создайте конфигурацию `/etc/nginx/sites-available/sni.conf`:
 
-# Вставьте содержимое из nginx.conf (не забудьте заменить example.com на ваш домен)
+```nginx
+server {
+  listen 127.0.0.1:8443 ssl http2 proxy_protocol;
+  server_name ваш_домен;
+
+  ssl_certificate     /etc/letsencrypt/live/ваш_домен/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/ваш_домен/privkey.pem;
+
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_prefer_server_ciphers on;
+  ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
+  ssl_session_cache shared:SSL:1m;
+  ssl_session_timeout 1d;
+  ssl_session_tickets off;
+
+  real_ip_header proxy_protocol;
+  set_real_ip_from 127.0.0.1;
+  set_real_ip_from ::1;
+
+  root /var/www/html/site;
+  index index.html;
+
+  location / {
+    try_files $uri $uri/ =404;
+  }
+}
 ```
-
-Основные настройки в `nginx.conf`:
-
-- Замените `server_name example.com` на ваш домен
-- Укажите путь к SSL-сертификатам (если не настроены глобально)
-- Измените `root /var/www/placeholder` при необходимости
 
 Активируйте конфигурацию:
 
 ```bash
 # Создайте символическую ссылку
-sudo ln -s /etc/nginx/sites-available/placeholder /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/sni.conf /etc/nginx/sites-enabled/
 
 # Проверьте конфигурацию
 sudo nginx -t
 
 # Перезагрузите Nginx
-sudo systemctl reload nginx
+sudo systemctl restart nginx
+
+# Проверьте прослушивание порта 8443
+ss -ltnp | grep 8443
 ```
 
-### Шаг 3: Проверка TLS (если ещё не настроен)
+### Шаг 3: Получение TLS-сертификата
 
 Если у вас ещё нет SSL-сертификатов, используйте Let's Encrypt:
 
@@ -86,6 +184,8 @@ sudo certbot --nginx -d example.com
 ```
 
 ## Валидация и проверка
+
+**Примечание:** Если вы использовали `install.sh`, эти проверки выполняются автоматически. Данный раздел полезен для ручной установки и диагностики проблем.
 
 После развёртывания выполните следующие проверки, чтобы убедиться, что сайт выглядит "настоящим" для автоматических систем.
 
@@ -179,6 +279,18 @@ curl -vkI https://example.com/документы
 
 ## Устранение неполадок
 
+### Проверка логов install.sh
+
+Если автоматическая установка завершилась с ошибкой, проверьте лог:
+
+```bash
+# Лог находится в /var/log/vpn-placeholder-install-<domain>-<timestamp>.log
+ls -lt /var/log/vpn-placeholder-install-*.log | head -1
+
+# Просмотрите последний лог
+sudo less $(ls -t /var/log/vpn-placeholder-install-*.log | head -1)
+```
+
 ### Nginx не запускается после изменения конфигурации
 
 ```bash
@@ -187,15 +299,37 @@ sudo nginx -t
 
 # Просмотрите логи ошибок
 sudo tail -f /var/log/nginx/error.log
+
+# Проверьте статус сервиса
+sudo systemctl status nginx
 ```
 
 ### Файлы не отдаются (404)
 
-Проверьте права доступа:
+Проверьте права доступа и местоположение файлов:
 
 ```bash
-ls -la /var/www/placeholder
+# Для установки через install.sh
+ls -la /var/www/html/site
 # Все файлы должны быть читаемыми для www-data
+
+# Проверьте, что index.html существует
+cat /var/www/html/site/index.html | head -5
+```
+
+### Порт 8443 не прослушивается
+
+Проверьте конфигурацию и статус Nginx:
+
+```bash
+# Проверьте, что Nginx слушает на 127.0.0.1:8443
+ss -ltnp | grep 8443
+
+# Проверьте SNI-конфигурацию
+cat /etc/nginx/sites-available/sni.conf
+
+# Убедитесь, что конфигурация активирована
+ls -l /etc/nginx/sites-enabled/sni.conf
 ```
 
 ### CSS/JS не загружаются
