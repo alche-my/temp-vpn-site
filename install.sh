@@ -16,7 +16,7 @@ set -euo pipefail
 # Constants and Configuration
 # ============================================================================
 
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.1.0"
 REQUIRED_TOOLS="nginx certbot curl tar rsync"
 NGINX_BACKUP_BASE="/etc/nginx/backup"
 SITE_ROOT="/var/www/html/site"
@@ -364,80 +364,101 @@ step_prepare_site() {
     print_success "Шаг 3: Подготовка завершена"
 }
 
-# Step 3.5: Create temporary HTTP config for Certbot
+# Step 3.5: Create temporary HTTP vhost for certbot --nginx
 step_create_temp_http_config() {
-    print_step "3.5️⃣ Создание временной HTTP-конфигурации для Certbot"
+    print_step "3.5️⃣ Создание временного HTTP vhost для certbot --nginx"
 
-    local temp_config="/etc/nginx/sites-available/temp-http-${DOMAIN}.conf"
+    local temp_config="/etc/nginx/sites-available/http-${DOMAIN}.conf"
 
-    print_info "Создание временной конфигурации для порта 80..."
+    print_info "Создание минимального HTTP vhost для порта 80..."
+    print_info "Это необходимо, чтобы certbot --nginx мог найти server_name ${DOMAIN}"
 
     # Backup if exists
     backup_nginx_config "${temp_config}"
 
-    # Create temporary HTTP server block for certbot
-    local temp_conf_content="server {
+    if [ "$DRY_RUN" = false ]; then
+        # Create temporary HTTP vhost using cat and heredoc
+        cat > "${temp_config}" <<'EOF'
+server {
     listen 80;
-    listen [::]:80;
+    server_name DOMAIN_PLACEHOLDER;
+
+    root /var/www/html/site;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+EOF
+
+        # Inject the real domain
+        sed -i "s/DOMAIN_PLACEHOLDER/${DOMAIN}/g" "${temp_config}"
+        print_success "Создан ${temp_config}"
+    else
+        echo "[DRY-RUN] Создание ${temp_config}:"
+        cat <<EOF
+server {
+    listen 80;
     server_name ${DOMAIN};
 
-    root ${SITE_ROOT};
+    root /var/www/html/site;
     index index.html;
 
     location / {
         try_files \$uri \$uri/ =404;
     }
-
-    # Allow certbot to use webroot
-    location ~ /.well-known {
-        allow all;
-    }
-}"
-
-    if [ "$DRY_RUN" = false ]; then
-        echo "$temp_conf_content" > "${temp_config}"
-        print_success "Создан ${temp_config}"
-    else
-        echo "[DRY-RUN] Создание ${temp_config} со следующим содержимым:"
-        echo "$temp_conf_content"
+}
+EOF
     fi
 
-    # Activate configuration
-    print_info "Активация временной конфигурации..."
-    execute ln -sf "${temp_config}" "/etc/nginx/sites-enabled/temp-http-${DOMAIN}.conf" 2>/dev/null || true
+    # Enable and reload nginx
+    print_info "Активация конфигурации..."
+    if [ "$DRY_RUN" = false ]; then
+        ln -sf "${temp_config}" "/etc/nginx/sites-enabled/http-${DOMAIN}.conf"
+        print_success "Создана символическая ссылка"
+    else
+        echo "[DRY-RUN] ln -sf ${temp_config} /etc/nginx/sites-enabled/http-${DOMAIN}.conf"
+    fi
 
     # Test configuration
-    print_info "Тестирование конфигурации Nginx..."
+    print_info "Проверка конфигурации Nginx..."
     if [ "$DRY_RUN" = false ]; then
         if ! nginx -t 2>&1; then
             print_error "Конфигурация Nginx содержит ошибки"
             restore_nginx_config "${temp_config}"
             exit 1
         fi
-        print_success "Конфигурация Nginx корректна"
+        print_success "nginx -t пройдена"
     else
         echo "[DRY-RUN] nginx -t"
     fi
 
     # Reload Nginx
     print_info "Перезагрузка Nginx..."
-    execute systemctl reload nginx
+    if [ "$DRY_RUN" = false ]; then
+        systemctl reload nginx
+        print_success "Nginx перезагружен"
+    else
+        echo "[DRY-RUN] systemctl reload nginx"
+    fi
 
     # Verification
-    print_info "Проверка доступности сайта на порту 80..."
+    print_info "Проверка прослушивания порта 80..."
     if [ "$DRY_RUN" = false ]; then
         sleep 1
-        if curl -sf "http://127.0.0.1/" -H "Host: ${DOMAIN}" | grep -q "ok"; then
-            print_success "Сайт доступен на порту 80"
+        if ss -ltnp | grep -q ':80'; then
+            print_success "Nginx слушает на порту 80"
+            ss -ltnp | grep ':80'
         else
-            print_warning "Не удалось проверить доступность (это не критично)"
+            print_warning "Порт 80 не прослушивается (может быть проблема)"
         fi
     else
-        echo "[DRY-RUN] curl -sf http://127.0.0.1/ -H \"Host: ${DOMAIN}\""
+        echo "[DRY-RUN] ss -ltnp | grep ':80'"
     fi
 
     echo ""
-    print_success "Шаг 3.5: Временная HTTP-конфигурация создана"
+    print_success "Шаг 3.5: Временный HTTP vhost создан и активирован"
 }
 
 # Step 4: Obtain TLS certificate
@@ -494,23 +515,82 @@ step_obtain_certificate() {
     print_success "Шаг 4: Сертификат получен"
 }
 
+# Step 4.1: Optional cleanup of temporary HTTP vhost
+step_cleanup_temp_http() {
+    print_step "4.1️⃣ Очистка временного HTTP vhost (опционально)"
+
+    local temp_config_enabled="/etc/nginx/sites-enabled/http-${DOMAIN}.conf"
+    local temp_config_available="/etc/nginx/sites-available/http-${DOMAIN}.conf"
+
+    # Check if temp config exists
+    if [ ! -f "$temp_config_enabled" ] && [ ! -f "$temp_config_available" ]; then
+        print_info "Временный HTTP vhost не найден, пропуск..."
+        return 0
+    fi
+
+    print_info "После получения сертификата временный HTTP vhost можно удалить"
+    print_info "или оставить для будущих продлений сертификата."
+    echo ""
+
+    if [ "$DRY_RUN" = true ]; then
+        echo "[DRY-RUN] Запрос на удаление временного vhost (пропущено в dry-run)"
+        echo ""
+        print_success "Шаг 4.1: В режиме dry-run пропущено"
+        return 0
+    fi
+
+    # Interactive prompt
+    local answer=""
+    read -p "Удалить временный HTTP vhost сейчас? [y/N]: " answer
+
+    if [[ "$answer" =~ ^[YyДд]$ ]]; then
+        print_info "Удаление временного HTTP vhost..."
+
+        if [ -L "$temp_config_enabled" ] || [ -f "$temp_config_enabled" ]; then
+            rm -f "$temp_config_enabled"
+            print_success "Удалён /etc/nginx/sites-enabled/http-${DOMAIN}.conf"
+        fi
+
+        if [ -f "$temp_config_available" ]; then
+            rm -f "$temp_config_available"
+            print_success "Удалён /etc/nginx/sites-available/http-${DOMAIN}.conf"
+        fi
+
+        # Test and reload nginx
+        if nginx -t 2>&1; then
+            systemctl reload nginx
+            print_success "Nginx перезагружен"
+        else
+            print_error "Ошибка конфигурации Nginx после удаления"
+            exit 1
+        fi
+
+        echo ""
+        print_success "Временный HTTP vhost удалён"
+    else
+        print_info "Сохранение HTTP vhost для будущих продлений сертификата"
+        print_info "Файл: ${temp_config_available}"
+        echo ""
+        print_success "HTTP vhost сохранён"
+    fi
+
+    echo ""
+    print_success "Шаг 4.1: Завершено"
+}
+
 # Step 5: Configure SNI site
 step_configure_sni() {
     print_step "5️⃣ Конфигурация SNI-сайта (порт 8443 + Proxy Protocol)"
 
-    # Remove temporary HTTP config created for certbot
-    print_info "Удаление временной HTTP-конфигурации..."
-    local temp_config_enabled="/etc/nginx/sites-enabled/temp-http-${DOMAIN}.conf"
-    local temp_config_available="/etc/nginx/sites-available/temp-http-${DOMAIN}.conf"
+    # Check if temporary HTTP config still exists (user chose to keep it)
+    local temp_config_enabled="/etc/nginx/sites-enabled/http-${DOMAIN}.conf"
+    local temp_config_available="/etc/nginx/sites-available/http-${DOMAIN}.conf"
 
-    if [ -L "$temp_config_enabled" ] || [ -f "$temp_config_enabled" ]; then
-        execute rm -f "$temp_config_enabled"
-        print_success "Удалена активированная временная конфигурация"
-    fi
-
-    if [ -f "$temp_config_available" ]; then
-        execute rm -f "$temp_config_available"
-        print_success "Удалена временная конфигурация из sites-available"
+    local temp_exists=false
+    if [ -L "$temp_config_enabled" ] || [ -f "$temp_config_enabled" ] || [ -f "$temp_config_available" ]; then
+        temp_exists=true
+        print_info "Обнаружен HTTP vhost (пользователь решил сохранить его)"
+        print_info "Он будет работать параллельно с SNI-конфигурацией на 8443"
     fi
 
     print_info "Создание конфигурации: ${SNI_CONFIG}"
@@ -936,6 +1016,7 @@ main() {
     step_prepare_site
     step_create_temp_http_config
     step_obtain_certificate
+    step_cleanup_temp_http
     step_configure_sni
     step_deploy_static_site
     step_reality_reminder
