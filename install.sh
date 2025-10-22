@@ -272,10 +272,10 @@ step_install_packages() {
     print_step "2️⃣ Установка Nginx и Certbot"
 
     print_info "Обновление списка пакетов..."
-    execute apt-get update -qq
+    execute env DEBIAN_FRONTEND=noninteractive apt-get update -qq
 
     print_info "Установка пакетов..."
-    execute apt-get install -y nginx certbot python3-certbot-nginx
+    execute env DEBIAN_FRONTEND=noninteractive apt-get install -qq -y nginx certbot python3-certbot-nginx
 
     # Verification
     print_info "Проверка установки..."
