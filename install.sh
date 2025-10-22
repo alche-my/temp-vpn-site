@@ -364,6 +364,82 @@ step_prepare_site() {
     print_success "Шаг 3: Подготовка завершена"
 }
 
+# Step 3.5: Create temporary HTTP config for Certbot
+step_create_temp_http_config() {
+    print_step "3.5️⃣ Создание временной HTTP-конфигурации для Certbot"
+
+    local temp_config="/etc/nginx/sites-available/temp-http-${DOMAIN}.conf"
+
+    print_info "Создание временной конфигурации для порта 80..."
+
+    # Backup if exists
+    backup_nginx_config "${temp_config}"
+
+    # Create temporary HTTP server block for certbot
+    local temp_conf_content="server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+
+    root ${SITE_ROOT};
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    # Allow certbot to use webroot
+    location ~ /.well-known {
+        allow all;
+    }
+}"
+
+    if [ "$DRY_RUN" = false ]; then
+        echo "$temp_conf_content" > "${temp_config}"
+        print_success "Создан ${temp_config}"
+    else
+        echo "[DRY-RUN] Создание ${temp_config} со следующим содержимым:"
+        echo "$temp_conf_content"
+    fi
+
+    # Activate configuration
+    print_info "Активация временной конфигурации..."
+    execute ln -sf "${temp_config}" "/etc/nginx/sites-enabled/temp-http-${DOMAIN}.conf" 2>/dev/null || true
+
+    # Test configuration
+    print_info "Тестирование конфигурации Nginx..."
+    if [ "$DRY_RUN" = false ]; then
+        if ! nginx -t 2>&1; then
+            print_error "Конфигурация Nginx содержит ошибки"
+            restore_nginx_config "${temp_config}"
+            exit 1
+        fi
+        print_success "Конфигурация Nginx корректна"
+    else
+        echo "[DRY-RUN] nginx -t"
+    fi
+
+    # Reload Nginx
+    print_info "Перезагрузка Nginx..."
+    execute systemctl reload nginx
+
+    # Verification
+    print_info "Проверка доступности сайта на порту 80..."
+    if [ "$DRY_RUN" = false ]; then
+        sleep 1
+        if curl -sf "http://127.0.0.1/" -H "Host: ${DOMAIN}" | grep -q "ok"; then
+            print_success "Сайт доступен на порту 80"
+        else
+            print_warning "Не удалось проверить доступность (это не критично)"
+        fi
+    else
+        echo "[DRY-RUN] curl -sf http://127.0.0.1/ -H \"Host: ${DOMAIN}\""
+    fi
+
+    echo ""
+    print_success "Шаг 3.5: Временная HTTP-конфигурация создана"
+}
+
 # Step 4: Obtain TLS certificate
 step_obtain_certificate() {
     print_step "4️⃣ Получение TLS-сертификата"
@@ -421,6 +497,21 @@ step_obtain_certificate() {
 # Step 5: Configure SNI site
 step_configure_sni() {
     print_step "5️⃣ Конфигурация SNI-сайта (порт 8443 + Proxy Protocol)"
+
+    # Remove temporary HTTP config created for certbot
+    print_info "Удаление временной HTTP-конфигурации..."
+    local temp_config_enabled="/etc/nginx/sites-enabled/temp-http-${DOMAIN}.conf"
+    local temp_config_available="/etc/nginx/sites-available/temp-http-${DOMAIN}.conf"
+
+    if [ -L "$temp_config_enabled" ] || [ -f "$temp_config_enabled" ]; then
+        execute rm -f "$temp_config_enabled"
+        print_success "Удалена активированная временная конфигурация"
+    fi
+
+    if [ -f "$temp_config_available" ]; then
+        execute rm -f "$temp_config_available"
+        print_success "Удалена временная конфигурация из sites-available"
+    fi
 
     print_info "Создание конфигурации: ${SNI_CONFIG}"
 
@@ -800,11 +891,17 @@ prompt_domain() {
     fi
 }
 
-# Set default email if not provided
-set_default_email() {
+# Prompt for email or use default
+prompt_email() {
     if [ -z "$EMAIL" ]; then
-        EMAIL="admin@${DOMAIN}"
-        print_info "Email не указан, используется: ${EMAIL}"
+        echo ""
+        read -rp "Введите email для уведомлений Let's Encrypt (Enter для admin@${DOMAIN}): " EMAIL
+
+        # If still empty after prompt, use default
+        if [ -z "$EMAIL" ]; then
+            EMAIL="admin@${DOMAIN}"
+            print_info "Используется email по умолчанию: ${EMAIL}"
+        fi
     fi
 }
 
@@ -827,8 +924,8 @@ main() {
     # Prompt for domain if not provided
     prompt_domain
 
-    # Set default email
-    set_default_email
+    # Prompt for email
+    prompt_email
 
     # Initialize log
     init_log
@@ -837,6 +934,7 @@ main() {
     step_dns_verification
     step_install_packages
     step_prepare_site
+    step_create_temp_http_config
     step_obtain_certificate
     step_configure_sni
     step_deploy_static_site
