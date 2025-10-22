@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Сервис — что-то пошло не так</title>
+  <link rel="stylesheet" href="/assets/site.css">
+  <link rel="icon" href="/favicon.ico">
+</head>
+<body>
+  <!-- Шапка сайта -->
+  <header role="banner">
+    <div class="container header-content">
+      <div class="logo">
+        <img src="/assets/logo.svg" alt="Логотип" width="40" height="40">
+        <span class="logo-text">Сервис</span>
+      </div>
+      <nav role="navigation" aria-label="Главное меню">
+        <ul class="nav-list">
+          <li><a href="/" aria-label="Перейти на главную">Главная</a></li>
+          <li><a href="/" aria-label="О нас">О нас</a></li>
+          <li><a href="/" aria-label="Документы">Документы</a></li>
+          <li><a href="/" aria-label="Контакты">Контакты</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Основной контент -->
+  <main>
+    <!-- Секция героя -->
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="container">
+        <h1 id="hero-title" class="hero-title">Ой, что-то сломалось</h1>
+        <div class="hero-subtitle">
+          <p>Похоже, возникла небольшая неполадка.</p>
+          <p>Мы уже разбираемся. Попробуйте обновить страницу позже.</p>
+        </div>
+        <p class="domain-info">
+          Домен: <strong id="host">загрузка...</strong>
+        </p>
+        <div class="hero-actions">
+          <a href="/" class="btn btn-primary" id="refresh-btn" aria-label="Обновить страницу">Обновить страницу</a>
+          <a href="/" class="btn btn-secondary" aria-label="Написать в поддержку">Написать в поддержку</a>
+          <a href="/" class="btn btn-secondary" aria-label="На главную">На главную</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Секция преимуществ -->
+    <section class="features" aria-labelledby="features-title">
+      <div class="container">
+        <h2 id="features-title" class="sr-only">Наши преимущества</h2>
+        <div class="features-grid">
+          <!-- Карточка 1 -->
+          <article class="feature-card">
+            <div class="feature-icon" aria-hidden="true">
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="2"/>
+                <path d="M16 24L22 30L32 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h3 class="feature-title">Стабильность</h3>
+            <p class="feature-description">Надёжная работа сервиса обеспечивается современной инфраструктурой и регулярным мониторингом.</p>
+          </article>
+
+          <!-- Карточка 2 -->
+          <article class="feature-card">
+            <div class="feature-icon" aria-hidden="true">
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="14" y="10" width="20" height="28" rx="2" stroke="currentColor" stroke-width="2"/>
+                <path d="M20 18L28 24L20 30V18Z" fill="currentColor"/>
+              </svg>
+            </div>
+            <h3 class="feature-title">Безопасность</h3>
+            <p class="feature-description">Защита данных пользователей и шифрование соединений обеспечивают высокий уровень безопасности.</p>
+          </article>
+
+          <!-- Карточка 3 -->
+          <article class="feature-card">
+            <div class="feature-icon" aria-hidden="true">
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 24L24 12L36 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M18 36V24H30V36" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h3 class="feature-title">Скорость</h3>
+            <p class="feature-description">Быстрая загрузка и отзывчивый интерфейс делают работу с сервисом приятной и эффективной.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Подвал -->
+  <footer role="contentinfo">
+    <div class="container footer-content">
+      <nav aria-label="Дополнительное меню">
+        <ul class="footer-links">
+          <li><a href="/">Пользовательское соглашение</a></li>
+          <li><a href="/">Политика конфиденциальности</a></li>
+          <li><a href="/">Статус системы</a></li>
+        </ul>
+      </nav>
+      <p class="copyright">
+        © <span id="year">2025</span> Сервис. Все права защищены.
+      </p>
+    </div>
+  </footer>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

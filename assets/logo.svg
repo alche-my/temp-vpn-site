@@ -1,0 +1,18 @@
+<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Современный геометрический логотип -->
+  <defs>
+    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Основная форма: стилизованная буква С или абстрактная форма -->
+  <circle cx="20" cy="20" r="18" fill="url(#logoGradient)"/>
+
+  <!-- Внутренний элемент для контраста -->
+  <path d="M 20 8 L 28 15 L 28 25 L 20 32 L 12 25 L 12 15 Z" fill="white" opacity="0.9"/>
+
+  <!-- Центральный акцент -->
+  <circle cx="20" cy="20" r="5" fill="url(#logoGradient)"/>
+</svg>
