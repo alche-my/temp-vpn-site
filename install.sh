@@ -628,6 +628,12 @@ step_configure_sni() {
     if [ "$DRY_RUN" = false ]; then
         echo "$sni_conf_content" > "${SNI_CONFIG}"
         print_success "Создан ${SNI_CONFIG}"
+
+        echo ""
+        print_info "=== Содержимое SNI конфигурации ==="
+        cat "${SNI_CONFIG}"
+        echo ""
+        print_info "==================================="
     else
         echo "[DRY-RUN] Создание ${SNI_CONFIG} со следующим содержимым:"
         echo "$sni_conf_content"
@@ -635,7 +641,12 @@ step_configure_sni() {
 
     # Activate configuration
     print_info "Активация конфигурации..."
-    execute ln -sf "${SNI_CONFIG}" /etc/nginx/sites-enabled/ 2>/dev/null || true
+    if [ "$DRY_RUN" = false ]; then
+        ln -sf "${SNI_CONFIG}" /etc/nginx/sites-enabled/
+        print_success "Создана символическая ссылка /etc/nginx/sites-enabled/sni.conf"
+    else
+        echo "[DRY-RUN] ln -sf ${SNI_CONFIG} /etc/nginx/sites-enabled/"
+    fi
 
     # Test configuration
     print_info "Тестирование конфигурации Nginx..."
@@ -652,7 +663,12 @@ step_configure_sni() {
 
     # Restart Nginx
     print_info "Перезапуск Nginx..."
-    execute systemctl restart nginx
+    if [ "$DRY_RUN" = false ]; then
+        systemctl restart nginx
+        print_success "Nginx перезапущен"
+    else
+        echo "[DRY-RUN] systemctl restart nginx"
+    fi
 
     # Wait for Nginx to start
     if [ "$DRY_RUN" = false ]; then
@@ -672,6 +688,28 @@ step_configure_sni() {
         ss -ltnp | grep "127.0.0.1:8443"
     else
         echo "[DRY-RUN] ss -ltnp | grep 8443"
+    fi
+
+    # Additional verification and warnings
+    if [ "$DRY_RUN" = false ]; then
+        echo ""
+        print_info "=== ВАЖНО: Прямой доступ к сайту ==="
+        print_warning "Сайт НЕ доступен напрямую из интернета!"
+        print_info "Причины:"
+        print_info "  1. Nginx слушает только на 127.0.0.1:8443 (localhost)"
+        print_info "  2. Используется proxy_protocol (требует заголовки от прокси)"
+        print_info "  3. Для доступа извне НЕОБХОДИМО настроить Reality в 3x-ui"
+        echo ""
+        print_info "Проверка локальных файлов сайта..."
+        if [ -f "${SITE_ROOT}/index.html" ]; then
+            print_success "Файлы сайта на месте: ${SITE_ROOT}/"
+            ls -lh "${SITE_ROOT}/" | head -10
+        else
+            print_warning "Файлы сайта ещё не развёрнуты (будет в шаге 5.1)"
+        fi
+        echo ""
+        print_info "Для доступа к сайту извне выполните настройку Reality (шаг 6)"
+        print_info "=================================="
     fi
 
     echo ""
@@ -785,10 +823,19 @@ step_deploy_static_site() {
 
 # Step 6: Reality/3x-ui reminder
 step_reality_reminder() {
-    print_step "6️⃣ Напоминание про Reality (3x-ui) inbound"
+    print_step "6️⃣ Настройка Reality (3x-ui) inbound - ОБЯЗАТЕЛЬНО!"
 
-    print_info "Скрипт НЕ изменяет конфигурацию 3x-ui."
-    print_info "Пожалуйста, настройте Reality inbound вручную в панели 3x-ui:"
+    echo ""
+    print_warning "════════════════════════════════════════════════════════════"
+    print_warning "  ВНИМАНИЕ: Сайт НЕ будет доступен без настройки Reality!"
+    print_warning "════════════════════════════════════════════════════════════"
+    echo ""
+
+    print_info "Скрипт НЕ изменяет конфигурацию 3x-ui автоматически."
+    print_info "Вам НЕОБХОДИМО настроить Reality inbound вручную в панели 3x-ui."
+    echo ""
+
+    print_info "=== Настройки для Reality inbound в 3x-ui ==="
     echo ""
 
     cat <<EOF
@@ -796,25 +843,51 @@ step_reality_reminder() {
 │ Поле                │ Значение                               │
 ├─────────────────────┼────────────────────────────────────────┤
 │ Port                │ 443                                    │
+│ Protocol            │ VLESS                                  │
 │ Security            │ reality                                │
 │ Dest (Target)       │ 127.0.0.1:8443                         │
 │ SNI / Server name   │ ${DOMAIN}                              │
 │ uTLS                │ chrome                                 │
-│ Xver                │ 1                                      │
+│ Xver (Proxy Proto)  │ 1                                      │
 └─────────────────────┴────────────────────────────────────────┘
 EOF
 
     echo ""
-    print_info "Команды для проверки (выполните вручную):"
-    echo ""
-    echo "  # Проверка TLS через openssl:"
-    echo "  openssl s_client -connect ${DOMAIN}:443 -servername ${DOMAIN} -alpn h2 -brief </dev/null"
-    echo ""
-    echo "  # Проверка локального сайта:"
-    echo "  curl -vk https://127.0.0.1:8443 --resolve ${DOMAIN}:8443:127.0.0.1 | head -n 30"
+    print_info "=== Пошаговая инструкция ==="
+    print_info "1. Откройте панель 3x-ui (обычно http://YOUR_IP:2053)"
+    print_info "2. Перейдите в раздел 'Inbounds'"
+    print_info "3. Создайте новый inbound или отредактируйте существующий"
+    print_info "4. Установите указанные выше параметры"
+    print_info "5. ВАЖНО: Dest = 127.0.0.1:8443 (не 443!)"
+    print_info "6. ВАЖНО: Xver = 1 (включить Proxy Protocol)"
+    print_info "7. Сохраните и перезапустите inbound"
     echo ""
 
-    print_success "Шаг 6: Напоминание выведено"
+    print_info "=== После настройки Reality проверьте доступность ==="
+    echo ""
+    echo "  # 1. Проверка TLS на порту 443 (должен отвечать Reality):"
+    echo "  openssl s_client -connect ${DOMAIN}:443 -servername ${DOMAIN} -alpn h2 -brief </dev/null"
+    echo ""
+    echo "  # 2. Проверка сайта через браузер:"
+    echo "  https://${DOMAIN}/"
+    echo ""
+    echo "  # 3. Проверка локального SNI-сайта (без Reality):"
+    echo "  curl -vk --resolve ${DOMAIN}:8443:127.0.0.1 https://${DOMAIN}:8443/ 2>&1 | head -30"
+    echo "     (должна быть ошибка proxy_protocol - это нормально!)"
+    echo ""
+
+    print_info "=== Текущее состояние ==="
+    if [ "$DRY_RUN" = false ]; then
+        print_info "✓ Nginx слушает на 127.0.0.1:8443 (SNI + Proxy Protocol)"
+        print_info "✓ TLS-сертификат установлен: /etc/letsencrypt/live/${DOMAIN}/"
+        print_info "✓ Статический сайт развёрнут: ${SITE_ROOT}/"
+        print_info "✗ Reality НЕ настроен (нужно сделать вручную в 3x-ui)"
+        echo ""
+        print_warning "Без Reality сайт ${DOMAIN} НЕ будет доступен из интернета!"
+    fi
+    echo ""
+
+    print_success "Шаг 6: Инструкции выведены - настройте Reality в 3x-ui!"
 }
 
 # Step 7: Enable certbot auto-renewal
